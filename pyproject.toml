@@ -1,0 +1,23 @@
+[project]
+name = "langchain-pwcx-aivision-demo"
+version = "0.1.0"
+description = "Cross-conversation context with LangChain, PowerContext and AI Vision"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "langchain-core>=1.6.6,<2",
+  "langchain-openai>=1.6.7,<2",
+  "langfuse>=5.0.2,<6",
+  "python-dotenv>=1.2.4,<2",
+  "streamlit>=1.40,<2",
+  "powercontext[client,cli,server] @ git+https://github.com/oceanbase/powercontext.git@aa81be0e28a061480e73706ebff90bd2a9526508",
+]
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[[tool.uv.index]]
+name = "pypi-mirror"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true

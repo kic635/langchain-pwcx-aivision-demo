@@ -1,0 +1,29 @@
+name: Integration test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+      - run: uv sync --locked
+      - name: Test with a real PowerContext server
+        shell: bash
+        run: |
+          mkdir -p .demo-data
+          export POWERCONTEXT_SERVER_DATABASE_URL="sqlite+aiosqlite:///$PWD/.demo-data/test.db"
+          uv run powercontext server run > /tmp/powercontext.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for i in {1..60}; do
+            if uv run powercontext ready; then ready=true; break; fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then cat /tmp/powercontext.log; exit 1; fi
+          uv run pytest -q
+          uv run python demo.py
