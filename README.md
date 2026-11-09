@@ -1,6 +1,8 @@
 # LangChain × PowerContext × AI Vision
 
-一个 Python 脚本，用官方 `PowerContextMiddleware` 展示跨对话共享上下文，同时通过 Langfuse SDK 将真实执行过程上报到 AI Vision。无需 Streamlit。
+提供简短实验与完整验证两个 Python 示例，用官方 `PowerContextMiddleware` 展示跨对话共享上下文，同时通过 Langfuse SDK 将真实执行过程上报到 AI Vision。无需 Streamlit。
+
+一起做实验可以先读 [`demo_simple.py`](demo_simple.py)：固定两个问题，直接装配 Agent，只打印问答、共享 Scope 和 Trace ID。它复用 `.env` 和本地 PowerContext 服务，不生成结果报告。`demo.py` 保留完整的原文展示和自动验证。
 
 ## 演示什么
 
@@ -40,12 +42,14 @@ uv run python demo.py --serve
 终端二运行两次真实对话：
 
 ```bash
-uv run python demo.py
+uv run python demo_simple.py
 ```
+
+需要完整验证和结果文件时，改为运行 `uv run python demo.py`。
 
 本地 Server 监听 `127.0.0.1:18012`，使用 `.demo-data/powercontext.db`。它启用 `topic-memory` 后台提取，没有启用 MCP 和服务端 OTel exporter。已有 Server 也可以直接使用，但必须配置生成模型、启用 `topic-memory` 处理，并允许当前身份创建 Scope、保存 Source 和读取记忆；只保存 Source、未提取记忆的 Server 无法完成本例。
 
-脚本按顺序打印：共享 Scope、独立线程、装配过程、A 的问答、自动保存的原文、发布的记忆、B 的问答、Trace ID。运行结果另存于忽略提交的 `.demo-data/result.json`。可选填写 `DEMO_AIVISION_BASE_URL`、`DEMO_AIVISION_SPACE_ID`、`DEMO_AIVISION_AGENT_UUID` 以打印可直接打开的 Trace 链接；这些字段只控制链接，不改变上报路由。
+完整版本 `demo.py` 按顺序打印：共享 Scope、独立线程、装配过程、A 的问答、自动保存的原文、发布的记忆、B 的问答、Trace ID。运行结果另存于忽略提交的 `.demo-data/result.json`。可选填写 `DEMO_AIVISION_BASE_URL`、`DEMO_AIVISION_SPACE_ID`、`DEMO_AIVISION_AGENT_UUID` 以打印可直接打开的 Trace 链接；这些字段只控制链接，不改变上报路由。
 
 ## 代码如何装配
 

@@ -11,6 +11,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --locked
+      - run: uv run python -m py_compile demo.py demo_simple.py
       - name: Test with a real PowerContext server
         shell: bash
         run: |
