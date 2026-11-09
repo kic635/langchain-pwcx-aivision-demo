@@ -1,122 +1,97 @@
 # LangChain × PowerContext × AI Vision
 
-可向同事展示的跨对话上下文示例：一个人在对话 A 提问，在全新的对话 B 中检索到原问题，并在 AI Vision 中查看调用链。
+一个 Python 脚本，用官方 `PowerContextMiddleware` 展示跨对话共享上下文，同时通过 Langfuse SDK 将真实执行过程上报到 AI Vision。无需 Streamlit。
 
-- **LangChain**：构建 prompt → chat model → output parser 调用链。
-- **PowerContext (pwcx)**：通过真实 Python Client SDK 写入和检索持久化 Memory。两个会话具有不同 `session_id`，显式使用相同 `scope_id`。
-- **AI Vision OB**：使用其 Langfuse 兼容采集入口，通过 LangChain callback 和 observation 记录模型、检索、写入和会话信息；不需要另部署 Langfuse。
+## 演示什么
 
-## 5 分钟演示
+1. 对话 A 提问：“Project Aurora-随机编号 的上线时间能否定为12月18日，预算控制在8万元？请记住这是我提出的待确认方案。”
+2. 官方 middleware 在 Agent 完成后，自动将这一轮用户问题和助手回答保存为 PowerContext Source。
+3. PowerContext Server 使用真实模型将 Source 提取为 Topic Memory。脚本等待发布，并打印原文及记忆证据；超时明确报错。
+4. 对话 B 使用另一个 `thread_id` 提问：“我在另一段对话里提出过这个项目什么上线时间和预算方案？当时已经确认了吗？”
+5. middleware 召回共享 Scope 中的证据，B 回答日期、预算及“尚未确认”，并附上记忆引用。
 
-需要 Python 3.11+、Git、[uv](https://docs.astral.sh/uv/)，以及能访问 GitHub 的网络。
+B 的输入没有日期、预算，也没有 A 的消息。两个线程使用同一个 PowerContext Scope，但 `InMemorySaver` 中的消息分别保存。每次运行新建 Scope 和项目编号，避免已有记忆干扰演示。Scope 是共享范围，生产环境还需要认证与访问控制。
+
+## 安装与配置
+
+需要 Python 3.11–3.14、[uv](https://docs.astral.sh/uv/)、一个真实模型和可访问的 AI Vision。
 
 ```bash
-git clone https://github.com/kic635/langchain-pwcx-aivision-demo.git
-cd langchain-pwcx-aivision-demo
 uv sync --locked
 cp .env.example .env
-mkdir -p .demo-data
 ```
 
-终端 1 启动独立 PowerContext 服务，使用本示例的独立数据库：
+填写 `.env`：
+
+- `OPENAI_*`：支持 OpenAI Chat Completions 的模型。Agent 和本地 PowerContext 记忆提取共用此配置，都会产生真实模型费用。
+- `LANGFUSE_*`：在 AI Vision 的 Agent Framework 接入页面获取地址及写入凭据。使用平台给出的地址，不要混用其他 Langfuse 项目的凭据。
+- `POWERCONTEXT_LANGCHAIN_*`：官方 middleware 的连接配置。示例默认使用下面启动的独立本地 Server。
+
+core 和 LangChain adapter 固定在同一个 PowerContext 上游提交，`uv.lock` 固定其余依赖。adapter 尚未发布到 PyPI，因此通过 Git 安装。
+
+## 运行
+
+终端一启动独立演示 Server；看到 `Application startup complete` 后继续：
 
 ```bash
-POWERCONTEXT_SERVER_DATABASE_URL="sqlite+aiosqlite:///$PWD/.demo-data/powercontext.db" \
-  uv run powercontext server run
+uv run python demo.py --serve
 ```
 
-终端 2 启动界面：
-
-```bash
-uv run streamlit run app.py --server.address 127.0.0.1
-```
-
-打开终端显示的本地地址，按顺序操作：
-
-1. 在**对话 A**点击发送：`Project Aurora 的上线时间能否定为 12 月 18 日，预算控制在 8 万元？`
-2. 在**对话 B**保留检索关键词 `Project Aurora`，点击发送：`在另一个对话里，我问过 Project Aurora 什么问题？请引用原问题。`
-3. 展开 B 的结果，核对 `hits[].text` 中的原问题、`source_session` 与 `citation`；A、B 的会话 ID 不同，scope 相同。
-4. 关闭 B 的「启用 PowerContext 检索」，再次发送，比较命中数与回答。B 不会获得 A 的聊天记录。
-5. 点击「开始全新演示」会生成新的 scope；历史数据仍保留在独立演示数据库中。
-
-默认 `MODEL_MODE=fixture` 使用明确标注的确定性 LangChain 模型，无需模型 API Key；它直接显示真实 PowerContext 检索证据，适合先验证共享上下文路径。它不模拟真实模型的理解能力。默认检索为 FTS，B 的检索框显式使用 `Project Aurora` 关键词；自然语言问题仍完整传给模型。FTS 对整句问题有词项覆盖率要求，关键词框便于稳定展示；不宣称演示了向量语义检索。
-
-也可以执行自动演示：
+终端二运行两次真实对话：
 
 ```bash
 uv run python demo.py
 ```
 
-脚本创建随机 scope，连续运行 A、B，并用另一个 scope 验证隔离；检索不到 A 或隔离失败会以非零状态退出。输出包含原问题、命中证据、会话和 Trace ID。
+本地 Server 监听 `127.0.0.1:18012`，使用 `.demo-data/powercontext.db`。它启用 `topic-memory` 后台提取，没有启用 MCP 和服务端 OTel exporter。已有 Server 也可以直接使用，但必须配置生成模型、启用 `topic-memory` 处理，并允许当前身份创建 Scope、保存 Source 和读取记忆；只保存 Source、未提取记忆的 Server 无法完成本例。
 
-## 连接真实模型与 AI Vision
+脚本按顺序打印：共享 Scope、独立线程、装配过程、A 的问答、自动保存的原文、发布的记忆、B 的问答、Trace ID。运行结果另存于忽略提交的 `.demo-data/result.json`。可选填写 `DEMO_AIVISION_BASE_URL`、`DEMO_AIVISION_SPACE_ID`、`DEMO_AIVISION_AGENT_UUID` 以打印可直接打开的 Trace 链接；这些字段只控制链接，不改变上报路由。
 
-在 `.env` 中配置，现有 shell 环境变量优先：
+## 代码如何装配
 
-```dotenv
-MODEL_MODE=live
-OPENAI_API_KEY=<你的模型密钥>
-OPENAI_BASE_URL=<兼容 Chat Completions 的服务地址>
-OPENAI_MODEL=<你的模型名称>
+直接阅读 [`demo.py`](demo.py) 中的 `main()`：
 
-AIVISION_ENABLED=true
-LANGFUSE_BASE_URL=<AI Vision 接入向导给出的平台根地址>
-LANGFUSE_PUBLIC_KEY=<向导给出的 Agent UUID>
-LANGFUSE_SECRET_KEY=<向导给出的同空间 SpaceKey>
+```python
+model = ChatOpenAI(...)
+tools = []
+prompt = "..."
+middleware = [PowerContextMiddleware(auto_capture=True, trace_content=True)]
+agent = create_agent(
+    model=model,
+    tools=tools,
+    system_prompt=prompt,
+    middleware=middleware,
+    context_schema=PowerContextScope,
+    checkpointer=InMemorySaver(),
+)
+# 两次 agent.ainvoke：不同 configurable.thread_id，相同 PowerContextScope。
 ```
 
-三个 `LANGFUSE_*` 参数来自 **AI Vision → 接入向导 → LangChain**。`LANGFUSE_BASE_URL` 应使用向导给出的根地址，不要手动添加 `/v1/traces`。Langfuse SDK 负责发送到兼容 OTLP 入口。凭据仅放在本地 `.env`；不要上传密钥或真实业务问题。
+`tools=[]` 是有意的：本例的记忆能力全部由官方 middleware 承担，没有手写保存工具、召回中间件或 Span。SDK 读接口仅用于展示和确认服务端结果，Scope 创建仅用于隔离演示。`trace_content=True` 明确授权采集召回正文，仅用于可展示的演示数据。
 
-修改配置后重启 Streamlit。再次运行 A、B，在 AI Vision 按结果中的 `trace_id` 检索，并按 `session_id` 对照两次独立会话。预期看到：
+每个对话在独立的 `asyncio` Task 中执行，模拟两个独立请求，避免共享调用上下文。每次调用使用一个普通 Langfuse `CallbackHandler`，`run_inline=True` 让异步 LangChain 调用中的追踪上下文保持正确。示例不指定 trace/span 父 ID，也不手工补造调用树。
 
-```text
-shared-context-chat                session=A-... / B-...
-├── powercontext.search_memory     检索输入、命中原文与引用
-├── LangChain prompt/model/parser  callback 产生的子调用
-└── powercontext.remember_memory   A 的原问题写入（B 默认不再写入）
-```
+## 在 AI Vision 验收
 
-检索与写入 observation 记录客户端调用耗时和结果；它们不代表 PowerContext 服务内部各阶段的 span。本例没有额外启用服务端 OTLP exporter。平台能否接收与保存，须按 Trace ID 在你的 AI Vision 实例中实际核验；本地 flush 成功不能证明平台落库。
+按输出的两个 Trace ID 搜索；等待采集落库后检查：
 
-`fixture` 也可启用 AI Vision，用于演示真实采集链路，模型节点会标注 fixture；同事演示真实模型效果时切换 `live`。
+| 检查项 | 预期 |
+| --- | --- |
+| 最终结果 | B 找回 A 提出的12月18日、8万元，并说明尚未确认 |
+| 会话隔离 | A、B 的 session/thread 不同，B 根节点输入只有自己的问题 |
+| 召回细节 | `PowerContextMiddleware recall`：A 为空；B 输出包含已发布的记忆及引用 |
+| 模型细节 | B 的 `ChatOpenAI` 输入包含 middleware 注入的证据，输出为真实模型回答 |
+| 调用链 | 每个 Agent Trace 只有一个完整根节点，middleware/SDK 调用与模型挂在该次执行下 |
+| 记忆观测 | PowerContext 的 SDK 召回调用被识别；无需为本例导入 MCP 配置 |
 
-## 为什么这是跨对话共享
+中文界面中的召回节点名为“召回记忆”，点击“展开完整文本”查看完整证据。SDK 子节点“解析记忆范围”等主要展示操作元数据，召回正文集中在父节点。
 
-```mermaid
-sequenceDiagram
-    participant A as 对话 A
-    participant LC as LangChain 应用
-    participant PC as PowerContext Server
-    participant B as 对话 B
-    participant AV as AI Vision
-    A->>LC: Project Aurora 原问题
-    LC->>PC: remember_memory(scope, 原问题 + 来源会话)
-    LC-->>AV: A 的 Trace
-    B->>LC: 在另一个对话里问过什么？
-    LC->>PC: search_memory(相同 scope, 显式检索关键词)
-    PC-->>LC: A 的问题 + citation + 来源会话
-    LC-->>B: 引用检索证据回答
-    LC-->>AV: B 的 Trace
-```
+结果正确与追踪完整是两个独立验收项：脚本打印 Trace ID 只证明产生了 ID，平台实际收到内容需要在 AI Vision 中核对。默认不启动服务端 exporter，因此不会出现服务端内部 `memory.search` 等 Span；middleware/SDK 的输入输出可见性以其自身采集契约为准。
 
-共享由应用显式指定的 scope 决定，session 仅标识对话。本例不使用全局聊天记录、LangChain checkpointer 或浏览器消息历史为 B 提供 A 的内容。问题以显式 Memory 写入，无需后台自动提取，也不会把「能否这样安排」转换为已批准的决定。
+遇到“原文已保存，但记忆尚未发布”，检查 Server 的生成模型、网络/TLS、worker 日志及等待时间；不要直接把 A 的消息复制给 B 来绕过。模型连接失败时检查代理和私有 CA，保持证书校验开启。
 
-本地服务默认无认证，仅监听回环地址。若连接受保护的 PowerContext 服务，配置 `POWERCONTEXT_URL` 和 `POWERCONTEXT_TOKEN`。scope 是数据检索范围，不是用户权限机制；这是单人本地演示，不是可直接公开部署的多租户应用。
+实际模型回答与平台核对结果见 [真实链路验证记录](docs/verification.md)。
 
-## 验证
+## 自动检查
 
-启动 PowerContext 服务后运行：
-
-```bash
-uv run pytest -q
-```
-
-集成测试使用真实 PowerContext HTTP 服务、真实 LangChain runnable 和确定性模型，检查跨会话命中、禁用检索、独立 scope 隔离；另以本地 OTLP 接收器检查 SDK 实际导出的模型、检索、写入 span 与父子关系。CI 使用新建的本地数据库。真实模型和 AI Vision 平台落库需要自行配置服务后验收。
-
-## 接口依据
-
-- [PowerContext Python Client](https://github.com/oceanbase/powercontext/blob/aa81be0e28a061480e73706ebff90bd2a9526508/docs/en/docs/reference/interfaces.md)
-- [PowerContext Server 配置](https://github.com/oceanbase/powercontext/blob/aa81be0e28a061480e73706ebff90bd2a9526508/docs/en/docs/reference/configuration.md)
-- [AI Vision LangChain 接入示例](https://github.com/ob-labs/ai-vision-ob/blob/e739531c55b8a9f7e8d41d0fcd1295872233a18a/ai-vision/agent-plugins/langfuse/examples/langchain.yaml)
-
-PowerContext 固定 Git commit，其他依赖由 `uv.lock` 锁定。MIT License。
+CI 验证官方 middleware 的自动 Source 保存、召回注入与线程隔离。测试使用真实本地 HTTP Server 和确定性测试模型，不代表真实模型或 AI Vision 已验证；完整演示需按上述步骤运行。

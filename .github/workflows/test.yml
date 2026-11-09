@@ -15,6 +15,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p .demo-data
+          export POWERCONTEXT_SERVER_RUNTIME='{"artifact_processing_families":[]}'
           export POWERCONTEXT_SERVER_DATABASE_URL="sqlite+aiosqlite:///$PWD/.demo-data/test.db"
           uv run powercontext server run > /tmp/powercontext.log 2>&1 &
           server_pid=$!
@@ -26,4 +27,3 @@ jobs:
           done
           if [ "$ready" != true ]; then cat /tmp/powercontext.log; exit 1; fi
           uv run pytest -q
-          uv run python demo.py

@@ -8,8 +8,9 @@ dependencies = [
   "langchain-openai>=1.6.7,<2",
   "langfuse>=5.0.2,<6",
   "python-dotenv>=1.2.4,<2",
-  "streamlit>=1.40,<2",
-  "powercontext[client,cli,server] @ git+https://github.com/oceanbase/powercontext.git@aa81be0e28a061480e73706ebff90bd2a9526508",
+  "powercontext[client,cli,server] @ git+https://github.com/oceanbase/powercontext.git@f27c0c287e20bcc0be293e8ee9db93331f18f0d9",
+  "langchain>=1.4.3,<2",
+  "powercontext-langchain @ git+https://github.com/oceanbase/powercontext.git@f27c0c287e20bcc0be293e8ee9db93331f18f0d9#subdirectory=integrations/langchain",
 ]
 [dependency-groups]
 dev = ["pytest>=8,<10"]
@@ -21,3 +22,7 @@ pythonpath = ["."]
 name = "pypi-mirror"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
 default = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
